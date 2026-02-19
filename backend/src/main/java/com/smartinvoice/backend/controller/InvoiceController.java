@@ -26,6 +26,13 @@ public class InvoiceController {
                 invoiceService.createInvoice(request)
         );
     }
+
+    @PostMapping("/{id}/send")
+    public ResponseEntity<InvoiceResponse> sendInvoice(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(invoiceService.sendInvoice(id));
+    }
+
     @PostMapping("/{id}/line-items")
     public ResponseEntity<InvoiceResponse> addLineItem(
             @PathVariable UUID id,

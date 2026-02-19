@@ -94,6 +94,33 @@ public class InvoiceService {
         return InvoiceMapper.toResponse(saved);
     }
 
+    @Transactional
+    public InvoiceResponse sendInvoice(UUID invoiceId) {
+
+        Invoice invoice = getInvoice(invoiceId);
+
+        // Rule 1: Must be DRAFT
+        if (invoice.getStatus() != InvoiceStatus.DRAFT) {
+            throw new IllegalStateException("Only DRAFT invoices can be sent");
+        }
+
+        // Rule 2: Must have at least one line item
+        if (invoice.getLineItems().isEmpty()) {
+            throw new IllegalStateException("Cannot send invoice without line items");
+        }
+
+        // Rule 3: Total must be > 0
+        if (invoice.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Invoice total must be greater than zero");
+        }
+
+        // Change status
+        invoice.setStatus(InvoiceStatus.SENT);
+
+        return InvoiceMapper.toResponse(invoice);
+    }
+
+
     // =============================
     // ADD LINE ITEM
     // =============================
