@@ -3,6 +3,7 @@ package com.smartinvoice.backend.controller;
 
 import com.smartinvoice.backend.domain.Invoice;
 import com.smartinvoice.backend.dto.CreateInvoiceRequest;
+import com.smartinvoice.backend.dto.InvoiceResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +21,7 @@ public class InvoiceController {
     private final InvoiceService invoiceService;
 
     @PostMapping
-    public ResponseEntity<Invoice> create(
+    public ResponseEntity<InvoiceResponse> create(
             @RequestBody @Valid CreateInvoiceRequest request
     ) {
         return ResponseEntity.ok(

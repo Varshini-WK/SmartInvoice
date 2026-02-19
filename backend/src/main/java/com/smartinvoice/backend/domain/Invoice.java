@@ -8,6 +8,8 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -60,4 +62,10 @@ public class Invoice {
 
     @Column(precision = 19, scale = 4)
     private BigDecimal amountPaid;
+
+    @OneToMany(mappedBy = "invoice",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true)
+    private List<InvoiceLineItem> lineItems = new ArrayList<>();
+
 }
