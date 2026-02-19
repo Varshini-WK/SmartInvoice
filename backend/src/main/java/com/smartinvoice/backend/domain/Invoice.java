@@ -66,6 +66,7 @@ public class Invoice {
     @OneToMany(mappedBy = "invoice",
             cascade = CascadeType.ALL,
             orphanRemoval = true)
+
     private List<InvoiceLineItem> lineItems = new ArrayList<>();
 
 }
