@@ -1,0 +1,2 @@
+ALTER TABLE invoices
+ALTER COLUMN currency TYPE VARCHAR(3);
