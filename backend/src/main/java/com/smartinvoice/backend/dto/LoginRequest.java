@@ -10,8 +10,12 @@ import lombok.Setter;
 public class LoginRequest {
 
     @NotBlank
-    private String name;
+    private String newname;
 
     @NotBlank
     private String password;
+
+    public String getName() {
+        return newname;
+    }
 }
