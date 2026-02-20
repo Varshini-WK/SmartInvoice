@@ -3,6 +3,7 @@ package com.smartinvoice.backend.controller;
 import com.smartinvoice.backend.dto.CreateInvoiceRequest;
 import com.smartinvoice.backend.dto.InvoiceResponse;
 
+import com.smartinvoice.backend.dto.RecordPaymentRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -53,6 +54,13 @@ public class InvoiceController {
             @PathVariable UUID id,
             @PathVariable UUID itemId) {
         return ResponseEntity.ok(invoiceService.deleteLineItem(id, itemId));
+    }
+
+    @PostMapping("/{id}/payments")
+    public ResponseEntity<InvoiceResponse> recordPayment(
+            @PathVariable UUID id,
+            @RequestBody RecordPaymentRequest request) {
+        return ResponseEntity.ok(invoiceService.recordPayment(id, request));
     }
 
 }

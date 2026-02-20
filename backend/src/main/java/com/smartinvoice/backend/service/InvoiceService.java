@@ -1,12 +1,12 @@
 package com.smartinvoice.backend.service;
 
-import com.smartinvoice.backend.domain.Invoice;
-import com.smartinvoice.backend.domain.InvoiceLineItem;
-import com.smartinvoice.backend.domain.InvoiceStatus;
+import com.smartinvoice.backend.domain.*;
 import com.smartinvoice.backend.dto.CreateInvoiceRequest;
 import com.smartinvoice.backend.dto.InvoiceResponse;
+import com.smartinvoice.backend.dto.RecordPaymentRequest;
 import com.smartinvoice.backend.mapper.InvoiceMapper;
 import com.smartinvoice.backend.repository.InvoiceRepository;
+import com.smartinvoice.backend.repository.PaymentRepository;
 import com.smartinvoice.backend.tenant.BusinessContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,10 +21,8 @@ import java.util.UUID;
 public class InvoiceService {
 
     private final InvoiceRepository invoiceRepository;
+    private final PaymentRepository paymentRepository;
 
-    // =============================
-    // CREATE INVOICE
-    // =============================
     @Transactional
     public InvoiceResponse createInvoice(CreateInvoiceRequest request) {
 
@@ -99,31 +97,25 @@ public class InvoiceService {
 
         Invoice invoice = getInvoice(invoiceId);
 
-        // Rule 1: Must be DRAFT
         if (invoice.getStatus() != InvoiceStatus.DRAFT) {
             throw new IllegalStateException("Only DRAFT invoices can be sent");
         }
 
-        // Rule 2: Must have at least one line item
         if (invoice.getLineItems().isEmpty()) {
             throw new IllegalStateException("Cannot send invoice without line items");
         }
 
-        // Rule 3: Total must be > 0
+
         if (invoice.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("Invoice total must be greater than zero");
         }
 
-        // Change status
+
         invoice.setStatus(InvoiceStatus.SENT);
 
         return InvoiceMapper.toResponse(invoice);
     }
 
-
-    // =============================
-    // ADD LINE ITEM
-    // =============================
     @Transactional
     public InvoiceResponse addLineItem(UUID invoiceId,
                                        CreateInvoiceRequest.LineItemRequest request) {
@@ -150,9 +142,6 @@ public class InvoiceService {
     }
 
 
-    // =============================
-    // UPDATE LINE ITEM
-    // =============================
     @Transactional
     public InvoiceResponse updateLineItem(UUID invoiceId,
                                           UUID itemId,
@@ -178,9 +167,6 @@ public class InvoiceService {
         return InvoiceMapper.toResponse(invoice);
     }
 
-    // =============================
-    // DELETE LINE ITEM
-    // =============================
     @Transactional
     public InvoiceResponse deleteLineItem(UUID invoiceId, UUID itemId) {
 
@@ -199,9 +185,7 @@ public class InvoiceService {
         return InvoiceMapper.toResponse(invoice);
     }
 
-    // =============================
-    // GET INVOICE (TENANT SAFE)
-    // =============================
+
     private Invoice getInvoice(UUID invoiceId) {
 
         UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
@@ -212,9 +196,6 @@ public class InvoiceService {
     }
 
 
-    // =============================
-    // ENSURE INVOICE IS EDITABLE
-    // =============================
     private void ensureDraft(Invoice invoice) {
 
         if (invoice.getStatus() != InvoiceStatus.DRAFT) {
@@ -224,9 +205,6 @@ public class InvoiceService {
         }
     }
 
-    // =============================
-    // RECALCULATE TOTALS
-    // =============================
     private void recalculateTotals(Invoice invoice) {
 
         BigDecimal subtotal = BigDecimal.ZERO;
@@ -264,11 +242,58 @@ public class InvoiceService {
         );
     }
 
-    // =============================
-    // HELPER
-    // =============================
+
     private BigDecimal defaultIfNull(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
+    @Transactional
+    public InvoiceResponse recordPayment(UUID invoiceId,
+                                         RecordPaymentRequest request) {
 
+        Invoice invoice = getInvoice(invoiceId);
+
+        // Rule 1: Check payable status
+        if (!(invoice.getStatus() == InvoiceStatus.SENT
+                || invoice.getStatus() == InvoiceStatus.OVERDUE
+                || invoice.getStatus() == InvoiceStatus.PARTIALLY_PAID)) {
+
+            throw new IllegalStateException("Invoice is not payable");
+        }
+
+        // Rule 2: Currency match
+        if (!invoice.getCurrency().equals(request.getCurrency())) {
+            throw new IllegalArgumentException("Payment currency mismatch");
+        }
+
+        BigDecimal newAmountPaid =
+                invoice.getAmountPaid().add(request.getAmount());
+
+        // Rule 3: Prevent overpayment
+        if (newAmountPaid.compareTo(invoice.getTotalAmount()) > 0) {
+            throw new IllegalArgumentException("Payment exceeds remaining balance");
+        }
+
+        // Create Payment
+        Payment payment = new Payment();
+        payment.setBusinessId(invoice.getBusinessId());
+        payment.setInvoiceId(invoice.getId());
+        payment.setAmount(request.getAmount());
+        payment.setCurrency(request.getCurrency());
+        payment.setPaymentReference(request.getPaymentReference());
+        payment.setStatus(PaymentStatus.RECEIVED);
+
+        paymentRepository.save(payment);
+
+        // Update invoice amount paid
+        invoice.setAmountPaid(newAmountPaid);
+
+        // Update invoice status
+        if (newAmountPaid.compareTo(invoice.getTotalAmount()) == 0) {
+            invoice.setStatus(InvoiceStatus.PAID);
+        } else {
+            invoice.setStatus(InvoiceStatus.PARTIALLY_PAID);
+        }
+
+        return InvoiceMapper.toResponse(invoice);
+    }
 }
