@@ -5,10 +5,12 @@ import com.smartinvoice.backend.domain.*;
 import com.smartinvoice.backend.dto.CreateInvoiceRequest;
 import com.smartinvoice.backend.dto.InvoiceResponse;
 import com.smartinvoice.backend.dto.RecordPaymentRequest;
+import com.smartinvoice.backend.dto.RefundRequest;
 import com.smartinvoice.backend.mapper.InvoiceMapper;
 import com.smartinvoice.backend.repository.IdempotencyRepository;
 import com.smartinvoice.backend.repository.InvoiceRepository;
 import com.smartinvoice.backend.repository.PaymentRepository;
+import com.smartinvoice.backend.repository.RefundRepository;
 import com.smartinvoice.backend.tenant.BusinessContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,12 +21,15 @@ import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
 
+import static com.smartinvoice.backend.tenant.BusinessContext.getBusinessId;
+
 @Service
 @RequiredArgsConstructor
 public class InvoiceService {
 
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
+    private final RefundRepository refundRepository;
 
     private final IdempotencyRepository idempotencyRepository;   // ✅ add
     private final ObjectMapper objectMapper;
@@ -32,7 +37,7 @@ public class InvoiceService {
     @Transactional
     public InvoiceResponse createInvoice(CreateInvoiceRequest request) {
 
-        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+        UUID businessId = UUID.fromString(getBusinessId());
 
         Invoice invoice = new Invoice();
         invoice.setBusinessId(businessId);
@@ -194,7 +199,7 @@ public class InvoiceService {
 
     private Invoice getInvoice(UUID invoiceId) {
 
-        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+        UUID businessId = UUID.fromString(getBusinessId());
 
         return invoiceRepository
                 .findByBusinessIdAndId(businessId, invoiceId)
@@ -257,7 +262,7 @@ public class InvoiceService {
                                          RecordPaymentRequest request,
                                          String idempotencyKey) {
 
-        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+        UUID businessId = UUID.fromString(getBusinessId());
 
         // 1️⃣ Check idempotency
         Optional<IdempotencyKey> existing =
@@ -337,4 +342,61 @@ public class InvoiceService {
 
         return response;
     }
+    @Transactional
+    public InvoiceResponse refundPayment(UUID paymentId,
+                                         RefundRequest request) {
+
+        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+
+        Payment payment = paymentRepository
+                .findById(paymentId)
+                .orElseThrow(() -> new RuntimeException("Payment not found"));
+
+        if (!payment.getBusinessId().equals(businessId)) {
+            throw new RuntimeException("Unauthorized access");
+        }
+
+        // Calculate total refunded so far
+        java.util.List<Refund> existingRefunds =
+                refundRepository.findByPaymentId(paymentId);
+
+        BigDecimal totalRefunded = existingRefunds.stream()
+                .map(Refund::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal newTotalRefunded =
+                totalRefunded.add(request.getAmount());
+
+        if (newTotalRefunded.compareTo(payment.getAmount()) > 0) {
+            throw new IllegalArgumentException("Refund exceeds payment amount");
+        }
+
+        // Create refund record
+        Refund refund = new Refund();
+        refund.setPaymentId(paymentId);
+        refund.setAmount(request.getAmount());
+        refund.setReason(request.getReason());
+
+        refundRepository.save(refund);
+
+        // Update invoice
+        Invoice invoice = getInvoice(payment.getInvoiceId());
+
+        BigDecimal updatedAmountPaid =
+                invoice.getAmountPaid().subtract(request.getAmount());
+
+        invoice.setAmountPaid(updatedAmountPaid);
+
+        // Update invoice status
+        if (updatedAmountPaid.compareTo(BigDecimal.ZERO) == 0) {
+            invoice.setStatus(InvoiceStatus.SENT);
+        } else if (updatedAmountPaid.compareTo(invoice.getTotalAmount()) < 0) {
+            invoice.setStatus(InvoiceStatus.PARTIALLY_PAID);
+        } else {
+            invoice.setStatus(InvoiceStatus.PAID);
+        }
+        invoiceRepository.save(invoice);
+        return InvoiceMapper.toResponse(invoice);
+    }
+
 }
