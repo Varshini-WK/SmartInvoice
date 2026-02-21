@@ -31,8 +31,9 @@ public class InvoiceService {
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
 
-    private final IdempotencyRepository idempotencyRepository;   // ✅ add
+    private final IdempotencyRepository idempotencyRepository;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
 
     @Transactional
     public InvoiceResponse createInvoice(CreateInvoiceRequest request) {
@@ -264,7 +265,6 @@ public class InvoiceService {
 
         UUID businessId = UUID.fromString(getBusinessId());
 
-        // 1️⃣ Check idempotency
         Optional<IdempotencyKey> existing =
                 idempotencyRepository
                         .findByBusinessIdAndIdempotencyKey(
@@ -283,7 +283,6 @@ public class InvoiceService {
             }
         }
 
-        // 2️⃣ Normal payment logic
         Invoice invoice = getInvoice(invoiceId);
 
         if (!(invoice.getStatus() == InvoiceStatus.SENT
@@ -313,7 +312,14 @@ public class InvoiceService {
         payment.setStatus(PaymentStatus.RECEIVED);
 
         paymentRepository.save(payment);
-
+        auditService.log(
+                businessId,
+                "PAYMENT",
+                payment.getId(),
+                "CREATED",
+                null,
+                payment
+        );
         invoice.setAmountPaid(newAmountPaid);
 
         if (newAmountPaid.compareTo(invoice.getTotalAmount()) == 0) {
@@ -378,10 +384,18 @@ public class InvoiceService {
         refund.setReason(request.getReason());
 
         refundRepository.save(refund);
+        auditService.log(
+                businessId,
+                "REFUND",
+                refund.getId(),
+                "CREATED",
+                null,
+                refund
+        );
 
         // Update invoice
         Invoice invoice = getInvoice(payment.getInvoiceId());
-
+        Invoice oldInvoiceState = cloneInvoice(invoice);
         BigDecimal updatedAmountPaid =
                 invoice.getAmountPaid().subtract(request.getAmount());
 
@@ -396,7 +410,30 @@ public class InvoiceService {
             invoice.setStatus(InvoiceStatus.PAID);
         }
         invoiceRepository.save(invoice);
+        auditService.log(
+                businessId,
+                "INVOICE",
+                invoice.getId(),
+                "REFUND_APPLIED",
+                oldInvoiceState,
+                invoice
+        );
         return InvoiceMapper.toResponse(invoice);
+
+
     }
+
+    private Invoice cloneInvoice(Invoice invoice) {
+
+        Invoice copy = new Invoice();
+
+        copy.setId(invoice.getId());
+        copy.setStatus(invoice.getStatus());
+        copy.setAmountPaid(invoice.getAmountPaid());
+        copy.setTotalAmount(invoice.getTotalAmount());
+
+        return copy;
+    }
+
 
 }
