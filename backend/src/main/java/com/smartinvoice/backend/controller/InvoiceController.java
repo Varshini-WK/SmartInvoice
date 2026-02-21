@@ -59,8 +59,12 @@ public class InvoiceController {
     @PostMapping("/{id}/payments")
     public ResponseEntity<InvoiceResponse> recordPayment(
             @PathVariable UUID id,
-            @RequestBody RecordPaymentRequest request) {
-        return ResponseEntity.ok(invoiceService.recordPayment(id, request));
+            @RequestBody RecordPaymentRequest request,
+            @RequestHeader("X-Idempotency-Key") String idempotencyKey) {
+
+        return ResponseEntity.ok(
+                invoiceService.recordPayment(id, request, idempotencyKey)
+        );
     }
 
 }

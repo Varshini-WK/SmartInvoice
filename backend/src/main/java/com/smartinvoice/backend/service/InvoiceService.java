@@ -1,10 +1,12 @@
 package com.smartinvoice.backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartinvoice.backend.domain.*;
 import com.smartinvoice.backend.dto.CreateInvoiceRequest;
 import com.smartinvoice.backend.dto.InvoiceResponse;
 import com.smartinvoice.backend.dto.RecordPaymentRequest;
 import com.smartinvoice.backend.mapper.InvoiceMapper;
+import com.smartinvoice.backend.repository.IdempotencyRepository;
 import com.smartinvoice.backend.repository.InvoiceRepository;
 import com.smartinvoice.backend.repository.PaymentRepository;
 import com.smartinvoice.backend.tenant.BusinessContext;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -22,6 +25,9 @@ public class InvoiceService {
 
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
+
+    private final IdempotencyRepository idempotencyRepository;   // ✅ add
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public InvoiceResponse createInvoice(CreateInvoiceRequest request) {
@@ -248,11 +254,33 @@ public class InvoiceService {
     }
     @Transactional
     public InvoiceResponse recordPayment(UUID invoiceId,
-                                         RecordPaymentRequest request) {
+                                         RecordPaymentRequest request,
+                                         String idempotencyKey) {
 
+        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+
+        // 1️⃣ Check idempotency
+        Optional<IdempotencyKey> existing =
+                idempotencyRepository
+                        .findByBusinessIdAndIdempotencyKey(
+                                businessId,
+                                idempotencyKey
+                        );
+
+        if (existing.isPresent()) {
+            try {
+                return objectMapper.readValue(
+                        existing.get().getResponseBody(),
+                        InvoiceResponse.class
+                );
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to deserialize stored response");
+            }
+        }
+
+        // 2️⃣ Normal payment logic
         Invoice invoice = getInvoice(invoiceId);
 
-        // Rule 1: Check payable status
         if (!(invoice.getStatus() == InvoiceStatus.SENT
                 || invoice.getStatus() == InvoiceStatus.OVERDUE
                 || invoice.getStatus() == InvoiceStatus.PARTIALLY_PAID)) {
@@ -260,7 +288,6 @@ public class InvoiceService {
             throw new IllegalStateException("Invoice is not payable");
         }
 
-        // Rule 2: Currency match
         if (!invoice.getCurrency().equals(request.getCurrency())) {
             throw new IllegalArgumentException("Payment currency mismatch");
         }
@@ -268,12 +295,10 @@ public class InvoiceService {
         BigDecimal newAmountPaid =
                 invoice.getAmountPaid().add(request.getAmount());
 
-        // Rule 3: Prevent overpayment
         if (newAmountPaid.compareTo(invoice.getTotalAmount()) > 0) {
             throw new IllegalArgumentException("Payment exceeds remaining balance");
         }
 
-        // Create Payment
         Payment payment = new Payment();
         payment.setBusinessId(invoice.getBusinessId());
         payment.setInvoiceId(invoice.getId());
@@ -284,16 +309,32 @@ public class InvoiceService {
 
         paymentRepository.save(payment);
 
-        // Update invoice amount paid
         invoice.setAmountPaid(newAmountPaid);
 
-        // Update invoice status
         if (newAmountPaid.compareTo(invoice.getTotalAmount()) == 0) {
             invoice.setStatus(InvoiceStatus.PAID);
         } else {
             invoice.setStatus(InvoiceStatus.PARTIALLY_PAID);
         }
 
-        return InvoiceMapper.toResponse(invoice);
+        InvoiceResponse response =
+                InvoiceMapper.toResponse(invoice);
+
+        // 3️⃣ Store idempotency record
+        try {
+            String json = objectMapper.writeValueAsString(response);
+
+            IdempotencyKey record = new IdempotencyKey();
+            record.setBusinessId(businessId);
+            record.setIdempotencyKey(idempotencyKey);
+            record.setResponseBody(json);
+
+            idempotencyRepository.save(record);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to store idempotency record");
+        }
+
+        return response;
     }
 }
