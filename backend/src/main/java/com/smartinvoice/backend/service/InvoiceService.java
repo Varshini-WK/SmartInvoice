@@ -275,6 +275,7 @@ public class InvoiceService {
 
         UUID businessId = UUID.fromString(getBusinessId());
 
+        // 1️⃣ Idempotency Check
         Optional<IdempotencyKey> existing =
                 idempotencyRepository
                         .findByBusinessIdAndIdempotencyKey(
@@ -295,6 +296,7 @@ public class InvoiceService {
 
         Invoice invoice = getInvoice(invoiceId);
 
+        // 2️⃣ Status validation
         if (!(invoice.getStatus() == InvoiceStatus.SENT
                 || invoice.getStatus() == InvoiceStatus.OVERDUE
                 || invoice.getStatus() == InvoiceStatus.PARTIALLY_PAID)) {
@@ -302,10 +304,12 @@ public class InvoiceService {
             throw new IllegalStateException("Invoice is not payable");
         }
 
-        if (!invoice.getCurrency().equals(request.getCurrency())) {
-            throw new IllegalArgumentException("Payment currency mismatch");
-        }
+        // ❌ REMOVE currency validation completely
+        // if (!invoice.getCurrency().equals(request.getCurrency())) {
+        //     throw new IllegalArgumentException("Payment currency mismatch");
+        // }
 
+        // 3️⃣ Validate amount
         BigDecimal newAmountPaid =
                 invoice.getAmountPaid().add(request.getAmount());
 
@@ -313,15 +317,20 @@ public class InvoiceService {
             throw new IllegalArgumentException("Payment exceeds remaining balance");
         }
 
+        // 4️⃣ Create Payment
         Payment payment = new Payment();
         payment.setBusinessId(invoice.getBusinessId());
         payment.setInvoiceId(invoice.getId());
         payment.setAmount(request.getAmount());
-        payment.setCurrency(request.getCurrency());
         payment.setPaymentReference(request.getPaymentReference());
+
+        // ✅ Always inherit invoice currency
+        payment.setCurrency(invoice.getCurrency());
+
         payment.setStatus(PaymentStatus.RECEIVED);
 
         paymentRepository.save(payment);
+
         auditService.log(
                 businessId,
                 "PAYMENT",
@@ -330,6 +339,8 @@ public class InvoiceService {
                 null,
                 payment
         );
+
+        // 5️⃣ Update invoice
         invoice.setAmountPaid(newAmountPaid);
 
         if (newAmountPaid.compareTo(invoice.getTotalAmount()) == 0) {
@@ -338,10 +349,9 @@ public class InvoiceService {
             invoice.setStatus(InvoiceStatus.PARTIALLY_PAID);
         }
 
-        InvoiceResponse response =
-                InvoiceMapper.toResponse(invoice);
+        InvoiceResponse response = InvoiceMapper.toResponse(invoice);
 
-        // 3️⃣ Store idempotency record
+        // 6️⃣ Store idempotency record
         try {
             String json = objectMapper.writeValueAsString(response);
 

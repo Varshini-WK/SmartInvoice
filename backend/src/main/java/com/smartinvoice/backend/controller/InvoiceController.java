@@ -1,10 +1,7 @@
 package com.smartinvoice.backend.controller;
 
-import com.smartinvoice.backend.dto.CreateInvoiceRequest;
-import com.smartinvoice.backend.dto.InvoiceResponse;
+import com.smartinvoice.backend.dto.*;
 
-import com.smartinvoice.backend.dto.PaymentResponse;
-import com.smartinvoice.backend.dto.RecordPaymentRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -80,6 +77,16 @@ public class InvoiceController {
     @GetMapping("/{id}/payments")
     public List<PaymentResponse> getPayments(@PathVariable UUID id) {
         return invoiceService.getPaymentsByInvoice(id);
+    }
+
+    @PostMapping("/payments/{paymentId}/refund")
+    public ResponseEntity<InvoiceResponse> refundPayment(
+            @PathVariable UUID paymentId,
+            @RequestBody @Valid RefundRequest request) {
+
+        return ResponseEntity.ok(
+                invoiceService.refundPayment(paymentId, request)
+        );
     }
 
 }
