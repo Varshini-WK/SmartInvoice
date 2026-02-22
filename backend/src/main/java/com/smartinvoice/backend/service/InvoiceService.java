@@ -2,11 +2,9 @@ package com.smartinvoice.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartinvoice.backend.domain.*;
-import com.smartinvoice.backend.dto.CreateInvoiceRequest;
-import com.smartinvoice.backend.dto.InvoiceResponse;
-import com.smartinvoice.backend.dto.RecordPaymentRequest;
-import com.smartinvoice.backend.dto.RefundRequest;
+import com.smartinvoice.backend.dto.*;
 import com.smartinvoice.backend.mapper.InvoiceMapper;
+import com.smartinvoice.backend.mapper.PaymentMapper;
 import com.smartinvoice.backend.repository.IdempotencyRepository;
 import com.smartinvoice.backend.repository.InvoiceRepository;
 import com.smartinvoice.backend.repository.PaymentRepository;
@@ -18,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -205,6 +204,17 @@ public class InvoiceService {
         return invoiceRepository
                 .findByBusinessIdAndId(businessId, invoiceId)
                 .orElseThrow(() -> new RuntimeException("Invoice not found"));
+    }
+    @Transactional(readOnly = true)
+    public InvoiceResponse getInvoiceById(UUID id) {
+
+        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+
+        Invoice invoice = invoiceRepository
+                .findByIdAndBusinessId(id, businessId)
+                .orElseThrow(() -> new RuntimeException("Invoice not found"));
+
+        return InvoiceMapper.toResponse(invoice);
     }
 
 
@@ -433,6 +443,35 @@ public class InvoiceService {
         copy.setTotalAmount(invoice.getTotalAmount());
 
         return copy;
+    }
+
+    @Transactional(readOnly = true)
+    public List<InvoiceResponse> getAllInvoices() {
+
+        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+
+        return invoiceRepository
+                .findByBusinessId(businessId)
+                .stream()
+                .map(InvoiceMapper::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> getPaymentsByInvoice(UUID invoiceId) {
+
+        UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
+
+        // Ensure invoice belongs to business
+        invoiceRepository
+                .findByIdAndBusinessId(invoiceId, businessId)
+                .orElseThrow(() -> new RuntimeException("Invoice not found"));
+
+        return paymentRepository
+                .findByInvoiceIdAndBusinessId(invoiceId, businessId)
+                .stream()
+                .map(PaymentMapper::toResponse)
+                .toList();
     }
 
 

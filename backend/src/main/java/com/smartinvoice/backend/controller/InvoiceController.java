@@ -3,14 +3,15 @@ package com.smartinvoice.backend.controller;
 import com.smartinvoice.backend.dto.CreateInvoiceRequest;
 import com.smartinvoice.backend.dto.InvoiceResponse;
 
+import com.smartinvoice.backend.dto.PaymentResponse;
 import com.smartinvoice.backend.dto.RecordPaymentRequest;
-import com.smartinvoice.backend.dto.RefundRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.smartinvoice.backend.service.InvoiceService;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -67,14 +68,18 @@ public class InvoiceController {
                 invoiceService.recordPayment(id, request, idempotencyKey)
         );
     }
-    @PostMapping("/payments/{paymentId}/refund")
-    public ResponseEntity<InvoiceResponse> refundPayment(
-            @PathVariable UUID paymentId,
-            @RequestBody RefundRequest request) {
+    @GetMapping
+    public List<InvoiceResponse> getAllInvoices() {
+        return invoiceService.getAllInvoices();
+    }
+    @GetMapping("/{id}")
+    public InvoiceResponse getInvoiceById(@PathVariable UUID id) {
+        return invoiceService.getInvoiceById(id);
+    }
 
-        return ResponseEntity.ok(
-                invoiceService.refundPayment(paymentId, request)
-        );
+    @GetMapping("/{id}/payments")
+    public List<PaymentResponse> getPayments(@PathVariable UUID id) {
+        return invoiceService.getPaymentsByInvoice(id);
     }
 
 }
