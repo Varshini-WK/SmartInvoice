@@ -20,6 +20,7 @@ public class InvoiceResponse {
     private String status;
     private LocalDate issueDate;
     private LocalDate dueDate;
+    private Integer gst ;
 
     private BigDecimal subtotal;
     private BigDecimal taxTotal;

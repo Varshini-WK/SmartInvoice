@@ -63,6 +63,9 @@ public class Invoice {
     @Column(precision = 19, scale = 4)
     private BigDecimal amountPaid;
 
+    @Column
+    private Integer gst ;
+
     @OneToMany(mappedBy = "invoice",
             cascade = CascadeType.ALL,
             orphanRemoval = true)

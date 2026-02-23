@@ -14,7 +14,7 @@ import java.util.UUID;
 @Repository
 public interface ReportRepository extends JpaRepository<Invoice, UUID> {
 
-    // 1️⃣ Revenue by date range
+
     @Query(value = """
         SELECT COALESCE(SUM(amount), 0)
         FROM payments
@@ -26,7 +26,7 @@ public interface ReportRepository extends JpaRepository<Invoice, UUID> {
                                   @Param("start") LocalDateTime start,
                                   @Param("end") LocalDateTime end);
 
-    // 2️⃣ Outstanding invoices
+
     @Query(value = """
         SELECT i.id, i.invoice_number, c.name,
                (i.total_amount - i.amount_paid) AS remaining
@@ -37,7 +37,7 @@ public interface ReportRepository extends JpaRepository<Invoice, UUID> {
         """, nativeQuery = true)
     List<Object[]> outstandingInvoices(@Param("businessId") UUID businessId);
 
-    // 3️⃣ Overdue invoices
+
     @Query(value = """
         SELECT i.id, i.invoice_number, c.name,
                i.total_amount - i.amount_paid
@@ -49,7 +49,7 @@ public interface ReportRepository extends JpaRepository<Invoice, UUID> {
         """, nativeQuery = true)
     List<Object[]> overdueInvoices(@Param("businessId") UUID businessId);
 
-    // 4️⃣ Revenue by customer
+
     @Query(value = """
         SELECT c.id, c.name, COALESCE(SUM(i.amount_paid), 0)
         FROM invoices i
@@ -59,7 +59,7 @@ public interface ReportRepository extends JpaRepository<Invoice, UUID> {
         """, nativeQuery = true)
     List<Object[]> revenueByCustomer(@Param("businessId") UUID businessId);
 
-    // 5️⃣ Monthly revenue summary
+
     @Query(value = """
         SELECT DATE_TRUNC('month', created_at) AS month,
                SUM(amount)

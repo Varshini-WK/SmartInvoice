@@ -1,6 +1,6 @@
 package com.smartinvoice.backend.domain;
 
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,6 +18,7 @@ public class InvoiceLineItem {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "invoice_id", nullable = false)
     private Invoice invoice;
@@ -39,4 +40,6 @@ public class InvoiceLineItem {
 
     @Column(precision = 19, scale = 4, nullable = false)
     private BigDecimal lineTotal;
+
+
 }

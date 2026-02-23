@@ -30,6 +30,9 @@ public class CreateInvoiceRequest {
     @NotNull
     private LocalDate dueDate;
 
+    @NotNull
+    private Integer gst ;
+
     @NotEmpty
     private List<LineItemRequest> lineItems;
     @Getter

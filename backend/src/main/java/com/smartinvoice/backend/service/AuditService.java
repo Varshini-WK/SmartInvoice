@@ -16,11 +16,11 @@ public class AuditService {
     private final ObjectMapper objectMapper;
 
     public void log(UUID businessId,
-                    String entityType,
-                    UUID entityId,
-                    String action,
-                    Object oldValue,
-                    Object newValue) {
+            String entityType,
+            UUID entityId,
+            String action,
+            Object oldValue,
+            Object newValue) {
 
         try {
             AuditLog log = new AuditLog();
@@ -40,7 +40,7 @@ public class AuditService {
             auditLogRepository.save(log);
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to write audit log");
+            throw new RuntimeException("Failed to write audit log: " + e.getMessage(), e);
         }
     }
 }

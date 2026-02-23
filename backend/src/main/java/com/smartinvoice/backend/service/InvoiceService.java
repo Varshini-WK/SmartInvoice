@@ -47,6 +47,7 @@ public class InvoiceService {
         invoice.setIssueDate(request.getIssueDate());
         invoice.setDueDate(request.getDueDate());
         invoice.setStatus(InvoiceStatus.DRAFT);
+        invoice.setGst(request.getGst());
 
         if (invoice.getLineItems() == null) {
             invoice.setLineItems(new ArrayList<>());
@@ -116,11 +117,9 @@ public class InvoiceService {
             throw new IllegalStateException("Cannot send invoice without line items");
         }
 
-
         if (invoice.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("Invoice total must be greater than zero");
         }
-
 
         invoice.setStatus(InvoiceStatus.SENT);
 
@@ -129,7 +128,7 @@ public class InvoiceService {
 
     @Transactional
     public InvoiceResponse addLineItem(UUID invoiceId,
-                                       CreateInvoiceRequest.LineItemRequest request) {
+            CreateInvoiceRequest.LineItemRequest request) {
 
         Invoice invoice = getInvoice(invoiceId);
         ensureDraft(invoice);
@@ -152,11 +151,10 @@ public class InvoiceService {
         return InvoiceMapper.toResponse(invoice);
     }
 
-
     @Transactional
     public InvoiceResponse updateLineItem(UUID invoiceId,
-                                          UUID itemId,
-                                          CreateInvoiceRequest.LineItemRequest request) {
+            UUID itemId,
+            CreateInvoiceRequest.LineItemRequest request) {
 
         Invoice invoice = getInvoice(invoiceId);
         ensureDraft(invoice);
@@ -196,7 +194,6 @@ public class InvoiceService {
         return InvoiceMapper.toResponse(invoice);
     }
 
-
     private Invoice getInvoice(UUID invoiceId) {
 
         UUID businessId = UUID.fromString(getBusinessId());
@@ -205,6 +202,7 @@ public class InvoiceService {
                 .findByBusinessIdAndId(businessId, invoiceId)
                 .orElseThrow(() -> new RuntimeException("Invoice not found"));
     }
+
     @Transactional(readOnly = true)
     public InvoiceResponse getInvoiceById(UUID id) {
 
@@ -217,13 +215,11 @@ public class InvoiceService {
         return InvoiceMapper.toResponse(invoice);
     }
 
-
     private void ensureDraft(Invoice invoice) {
 
         if (invoice.getStatus() != InvoiceStatus.DRAFT) {
             throw new IllegalStateException(
-                    "Only DRAFT invoices can be modified"
-            );
+                    "Only DRAFT invoices can be modified");
         }
     }
 
@@ -260,35 +256,31 @@ public class InvoiceService {
         invoice.setTaxTotal(taxTotal);
         invoice.setDiscountTotal(discountTotal);
         invoice.setTotalAmount(
-                subtotal.add(taxTotal).subtract(discountTotal)
-        );
+                subtotal.add(taxTotal).subtract(discountTotal));
     }
-
 
     private BigDecimal defaultIfNull(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
+
     @Transactional
     public InvoiceResponse recordPayment(UUID invoiceId,
-                                         RecordPaymentRequest request,
-                                         String idempotencyKey) {
+            RecordPaymentRequest request,
+            String idempotencyKey) {
 
         UUID businessId = UUID.fromString(getBusinessId());
 
-        // 1️⃣ Idempotency Check
-        Optional<IdempotencyKey> existing =
-                idempotencyRepository
-                        .findByBusinessIdAndIdempotencyKey(
-                                businessId,
-                                idempotencyKey
-                        );
+
+        Optional<IdempotencyKey> existing = idempotencyRepository
+                .findByBusinessIdAndIdempotencyKey(
+                        businessId,
+                        idempotencyKey);
 
         if (existing.isPresent()) {
             try {
                 return objectMapper.readValue(
                         existing.get().getResponseBody(),
-                        InvoiceResponse.class
-                );
+                        InvoiceResponse.class);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to deserialize stored response");
             }
@@ -296,35 +288,31 @@ public class InvoiceService {
 
         Invoice invoice = getInvoice(invoiceId);
 
-        // 2️⃣ Status validation
+
         if (!(invoice.getStatus() == InvoiceStatus.SENT
                 || invoice.getStatus() == InvoiceStatus.OVERDUE
-                || invoice.getStatus() == InvoiceStatus.PARTIALLY_PAID)) {
+                || invoice.getStatus() == InvoiceStatus.PARTIALLY_PAID
+                || invoice.getStatus() == InvoiceStatus.REFUNDED)) {
 
             throw new IllegalStateException("Invoice is not payable");
         }
 
-        // ❌ REMOVE currency validation completely
-        // if (!invoice.getCurrency().equals(request.getCurrency())) {
-        //     throw new IllegalArgumentException("Payment currency mismatch");
-        // }
 
-        // 3️⃣ Validate amount
-        BigDecimal newAmountPaid =
-                invoice.getAmountPaid().add(request.getAmount());
+
+
+        BigDecimal newAmountPaid = invoice.getAmountPaid().add(request.getAmount());
 
         if (newAmountPaid.compareTo(invoice.getTotalAmount()) > 0) {
             throw new IllegalArgumentException("Payment exceeds remaining balance");
         }
 
-        // 4️⃣ Create Payment
         Payment payment = new Payment();
         payment.setBusinessId(invoice.getBusinessId());
         payment.setInvoiceId(invoice.getId());
         payment.setAmount(request.getAmount());
         payment.setPaymentReference(request.getPaymentReference());
 
-        // ✅ Always inherit invoice currency
+
         payment.setCurrency(invoice.getCurrency());
 
         payment.setStatus(PaymentStatus.RECEIVED);
@@ -337,10 +325,9 @@ public class InvoiceService {
                 payment.getId(),
                 "CREATED",
                 null,
-                payment
-        );
+                payment);
 
-        // 5️⃣ Update invoice
+
         invoice.setAmountPaid(newAmountPaid);
 
         if (newAmountPaid.compareTo(invoice.getTotalAmount()) == 0) {
@@ -351,7 +338,7 @@ public class InvoiceService {
 
         InvoiceResponse response = InvoiceMapper.toResponse(invoice);
 
-        // 6️⃣ Store idempotency record
+
         try {
             String json = objectMapper.writeValueAsString(response);
 
@@ -368,9 +355,10 @@ public class InvoiceService {
 
         return response;
     }
+
     @Transactional
     public InvoiceResponse refundPayment(UUID paymentId,
-                                         RefundRequest request) {
+            RefundRequest request) {
 
         UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
 
@@ -382,48 +370,50 @@ public class InvoiceService {
             throw new RuntimeException("Unauthorized access");
         }
 
-        // Calculate total refunded so far
-        java.util.List<Refund> existingRefunds =
-                refundRepository.findByPaymentId(paymentId);
+
+        java.util.List<Refund> existingRefunds = refundRepository.findByPaymentId(paymentId);
 
         BigDecimal totalRefunded = existingRefunds.stream()
                 .map(Refund::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal newTotalRefunded =
-                totalRefunded.add(request.getAmount());
+        BigDecimal newTotalRefunded = totalRefunded.add(request.getAmount());
 
         if (newTotalRefunded.compareTo(payment.getAmount()) > 0) {
             throw new IllegalArgumentException("Refund exceeds payment amount");
         }
 
-        // Create refund record
+
         Refund refund = new Refund();
         refund.setPaymentId(paymentId);
         refund.setAmount(request.getAmount());
         refund.setReason(request.getReason());
 
         refundRepository.save(refund);
+
+
+        if (newTotalRefunded.compareTo(payment.getAmount()) == 0) {
+            payment.setStatus(PaymentStatus.REFUNDED);
+            paymentRepository.save(payment);
+        }
+
         auditService.log(
                 businessId,
                 "REFUND",
                 refund.getId(),
                 "CREATED",
                 null,
-                refund
-        );
+                refund);
 
-        // Update invoice
+
         Invoice invoice = getInvoice(payment.getInvoiceId());
         Invoice oldInvoiceState = cloneInvoice(invoice);
-        BigDecimal updatedAmountPaid =
-                invoice.getAmountPaid().subtract(request.getAmount());
+        BigDecimal updatedAmountPaid = invoice.getAmountPaid().subtract(request.getAmount());
 
         invoice.setAmountPaid(updatedAmountPaid);
 
-        // Update invoice status
         if (updatedAmountPaid.compareTo(BigDecimal.ZERO) == 0) {
-            invoice.setStatus(InvoiceStatus.SENT);
+            invoice.setStatus(InvoiceStatus.REFUNDED);
         } else if (updatedAmountPaid.compareTo(invoice.getTotalAmount()) < 0) {
             invoice.setStatus(InvoiceStatus.PARTIALLY_PAID);
         } else {
@@ -436,10 +426,8 @@ public class InvoiceService {
                 invoice.getId(),
                 "REFUND_APPLIED",
                 oldInvoiceState,
-                invoice
-        );
+                invoice);
         return InvoiceMapper.toResponse(invoice);
-
 
     }
 
@@ -472,7 +460,7 @@ public class InvoiceService {
 
         UUID businessId = UUID.fromString(BusinessContext.getBusinessId());
 
-        // Ensure invoice belongs to business
+
         invoiceRepository
                 .findByIdAndBusinessId(invoiceId, businessId)
                 .orElseThrow(() -> new RuntimeException("Invoice not found"));
@@ -483,6 +471,5 @@ public class InvoiceService {
                 .map(PaymentMapper::toResponse)
                 .toList();
     }
-
 
 }
